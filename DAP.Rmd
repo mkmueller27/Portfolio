@@ -1,0 +1,195 @@
+---
+title: "DAP"
+author: "Kristina"
+date: "2024-06-18"
+output: html_document
+---
+
+```{r}
+library(readxl)
+library(UsingR)
+library(MASS)
+library(tree)
+library(e1071)
+library(ISLR2)
+library(lattice)
+library(boot)
+library(randomForest)
+library(rpart)
+library(ggplot2)
+
+
+dementia <-dementia_patients_health_data_EXCEL_csv [ , -c(8:9)]
+
+attach(dementia)
+dementia
+str(dementia)
+
+dementia[sapply(dementia, is.character)] <- lapply(dementia[sapply(dementia, is.character)], 
+                                       as.factor)
+
+str(dementia)
+
+#summary statistics
+summary(dementia)
+
+#barplot
+qplot(as.factor(Dementia)) +
+  geom_bar(fill = "purple") +
+  labs(x = "Dementia", y = "Count")
+
+# pie chart
+Education <- dementia$Education_Level
+
+Education.table <- table(Education)
+Edu_dem.table <- table(Education, dementia$Dementia)
+
+proportions <- prop.table(table(Education, dementia$Dementia))
+
+pie(Education.table, col = rainbow(length(Education.table)))
+pie(Edu_dem.table, col = rainbow(length(Education.table)))
+pie(proportions, col = rainbow(length(proportions)))
+
+
+
+
+# I. Decision Tree
+
+tree.dementia <- tree(as.factor(Dementia) ~ Education_Level + APOE_Îµ4 + Family_History + Nutrition_Diet + Chronic_Health_Conditions + Physical_Activity + Smoking_Status + Gender,  split="deviance", data=dementia)
+
+summary(tree.dementia)
+
+#all x's
+tree.dementia.all <- tree(as.factor(Dementia) ~ .,  split="deviance", data=dementia)
+
+summary(tree.dementia.all)
+
+#confusion matrix
+table(predict(tree.dementia, type="class"), dementia$Dementia)    
+
+#misclassification error rate
+mean(predict(tree.dementia, type="class") != dementia$Dementia)     
+
+#plot the tree
+plot(tree.dementia)
+title(main="Classification Tree by deviance")
+text(tree.dementia, cex=0.75, pretty=0)
+
+#plot the tree
+plot(tree.dementia.all)
+title(main="Classification Tree by deviance")
+text(tree.dementia.all, cex=0.75, pretty=0)
+
+#Model evaluation
+n <- dim(dementia) [1]
+n
+# Split data into training and test sets 70/30
+set.seed(1234)
+
+#training set
+TRN.set <- sample(n, size=floor(n * 0.7), replace=FALSE)
+dementia.TRN <-dementia[TRN.set, ]
+
+tree.dementia.TRN <-tree(as.factor(Dementia) ~ Education_Level + APOE_Îµ4 + Family_History + Nutrition_Diet + Chronic_Health_Conditions + Physical_Activity + Smoking_Status + Gender,  split="deviance", data=dementia)
+
+#test set
+dementia.VLD <-dementia[-TRN.set, ]
+tree.predict <-predict(tree.dementia.TRN, dementia.VLD, type="class")
+
+#confusion matrix
+table(tree.predict, dementia.VLD$Dementia)
+
+#validation error rate
+mean(tree.predict != dementia.VLD$Dementia)
+
+# 2. Random Forest
+
+n <- dim(dementia) [1]
+n
+
+dementia$Dementia <-as.factor(dementia$Dementia)
+
+# Split data into training and test sets 70/30
+set.seed(12345)
+
+#training set
+RF.TRN.set <- sample(n, size=floor(n * 0.7), replace=FALSE)
+RF.dementia.TRN <-dementia[RF.TRN.set, ]
+RF.dementia.VLD <-dementia[- RF.TRN.set, ]
+
+RF.dementia <- randomForest(Dementia ~ Education_Level + APOE_Îµ4 + Family_History + Nutrition_Diet + Chronic_Health_Conditions + Physical_Activity + Smoking_Status + Gender, data=RF.dementia.TRN, ntree=1000, mtry=8, importance = TRUE)
+
+RF.dementia
+str(RF.dementia)
+
+#Training error rate
+table(dementia.TRN$Dementia, RF.dementia$predicted)
+mean(dementia.TRN$Dementia != RF.dementia$predicted) 
+
+#cross-validation
+Pred.RF.dementia <- predict(RF.dementia, newdata=RF.dementia.VLD)
+Pred.RF.dementia
+
+#confusion matrix
+
+table(dementia.VLD$Dementia, Pred.RF.dementia)
+#Validation error rate
+mean(dementia.VLD$Dementia != Pred.RF.dementia)   
+
+#mean((Pred.RF.dementia - RF.dementia.VLD$Dementia)^2)
+
+
+#variable importance
+importance(RF.dementia, scale=TRUE)   
+
+varImpPlot(RF.dementia, sort=TRUE, scale=TRUE)  
+
+apply(importance(RF.dementia, type=1, scale=TRUE), 2, sort, decreasing=TRUE)
+apply(importance(RF.dementia, type=2, scale=TRUE), 2, sort, decreasing=TRUE)
+
+# 3. SVM 
+n <- dim(dementia) [1]
+n
+
+dementia$Dementia <-as.factor(dementia$Dementia)
+
+# Split data into training and test sets 70/30
+set.seed(123456)
+
+#training set
+SVM.TRN.set <- sample(n, size=floor(n * 0.7), replace=FALSE)
+SVM.dementia.TRN <-dementia[RF.TRN.set, ]
+SVM.dementia.VLD <-dementia[- RF.TRN.set, ]
+
+#find cost parameter
+TUNE.OUT.dementia <- tune(svm, Dementia ~ Education_Level + APOE_Îµ4 + Family_History + Nutrition_Diet + Chronic_Health_Conditions + Physical_Activity + Smoking_Status + Gender, data=SVM.dementia.TRN, kernel="linear", scale=FALSE, ranges=list(cost=c(0.001, 0.01, 0.1, 1, 5, 10, 100)))
+
+summary(TUNE.OUT.dementia)
+
+#cost = 1
+SVM.dementia <- svm (Dementia ~ Education_Level + APOE_Îµ4 + Family_History + Nutrition_Diet + Chronic_Health_Conditions + Physical_Activity + Smoking_Status + Gender, data=SVM.dementia.TRN, kernel="linear", cost = 1, scale=FALSE)
+
+str(SVM.dementia)
+length(SVM.dementia$index)
+
+#training error rate
+mean(SVM.dementia$fitted != SVM.dementia.TRN$Dementia)     
+
+#prediction error rate
+SVM.dementia.predict <- predict(SVM.dementia, SVM.dementia.VLD)
+table(predicted=SVM.dementia.predict, truth=SVM.dementia.VLD$Dementia)
+mean(SVM.dementia.predict != SVM.dementia.VLD$Dementia)                              
+
+detach(dementia)
+```
+
+
+
+```{r}
+```
+
+
+```{r}
+
+```
+
