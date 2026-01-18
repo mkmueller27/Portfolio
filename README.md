@@ -1,1 +1,1 @@
-Collection of different projects and assignments (Python and R)
+Collection of different projects, assignments (Python and R) and certificates (SQL, Cybersecurity)
